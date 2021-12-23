@@ -7,9 +7,11 @@ Download C files from github, use CMake to compile it (with gcc), and execute th
 Currently, make is set to compile an executable that runs test case 2. To change this, within MakeFile (line 19), 
 change sfs_test2.c to the C program you wish to execute (the one relient on functions in our file system).
 
-git clone ...
+```
+git clone https://github.com/Yaters/Simple-File-System.git
 make
 ./sfs
+```
 
 SFS API:
 
@@ -162,10 +164,3 @@ Given:
                 "fuse_wrap_old.c") to run Filesystem in User Space (FUSE) with our implementation. This 
                 software allows us to create user-level file systems (without modifying the kernel) that
                 'replace' the normal file editing functions with our own implementation that runs in user-space.
-
-
-
-
-
-
-
