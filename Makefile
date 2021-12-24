@@ -42,4 +42,4 @@ $(EXECUTABLE): $(OBJECTS)
 
 # remove (rf = recursive & force) all object and executable files (~ is end of backup files text editors use)
 clean:
-	rm -rf *.o *~ $(EXECUTABLE) fs.sfs
+	rm -rf *.o *~ $(EXECUTABLE)
