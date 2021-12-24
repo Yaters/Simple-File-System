@@ -7,11 +7,10 @@ Download C files from github, use CMake to compile it (with gcc), and execute th
 Currently, make is set to compile an executable that runs test case 2. To change this, within MakeFile (line 19), 
 change sfs_test2.c to the C program you wish to execute (the one relient on functions in our file system).
 
-`
+
 git clone https://github.com/Yaters/Simple-File-System.git
 make
 ./sfs
-`
 
 SFS API:
 
@@ -141,7 +140,7 @@ inode        - holds iNode structures (in header) and functions to modify iNodes
 
 free_bit_map - functions to edit the free bit map (for iNodes & data blocks), as well as creating or loading it
 
-super_block  - likely unecessary to keep separate from api, functions to load/store the super block
+super_block  - likely unecessary to keep this separate from api, has functions to load & store the super block
 
 All files are stored in a directory with name "root", though the name isn't used
 (the root directory is not stored in any directory). 
