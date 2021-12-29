@@ -14,8 +14,8 @@ make
 
 SFS API:
 
-NOTE: Functions like read, write, seek, open/close, and delete can not be used on directories.
-      Use specialized directory functions instead (mkdir, load, remove, etc.)
+NOTE: Functions like fread, fwrite, fseek, fopen/fclose, and fdelete can not be used on directories.
+      Use specialized directory functions instead (mkdir, loaddir, remove, etc.)
 
 /* Formats the disk emulator virtual disk, and creates the simple file system 
 *  instance on it.
