@@ -45,7 +45,7 @@ int sfs_mkdir(char* name);
 /* Load subdirectory of given name into cache, future file calls will affect this directory. 
 *  Only takes one file at a time, and does not accept absolute paths, only relative.
 *  Parameters:
-*      name (char*): Name of new subdirectory to load
+*      name (char*): Name of new subdirectory to load, or ".." to load parent
 *  Return:
 *      success (int): 0 if succesful, negative if error
 */
@@ -114,7 +114,7 @@ int sfs_fread(int fileID, char* buf, int length);
 int sfs_fseek(int fileID, int loc);
 
 
-/* Delete a file from the current SFS directory.
+/* Delete a file or directory from the current SFS directory.
 *  Parameters:
 *      file (char*): Name of file to be deleted
 *  Return:
