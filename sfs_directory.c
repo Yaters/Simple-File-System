@@ -6,13 +6,18 @@
 // NOTE: The root directory is called "root"
 #define DIRECTORY_SEPARATOR '\\'
 
-// NOTE: loadDirectory could fail on realloc. Preventing the potential data corruptions of this
-// is not an easy task, and it would need performance drawbacks
-// Cycles are prevented because the only way to add a file to a directory is to create a new one
-// or move/copy an existing. We ensure no directory is moved into its own subdirectory
+// NOTE: loadDirectory could fail on realloc. Properly catching everywhere this could happen
+// is not simple, and was not done here.
 
-// TODO (someday): Fix up subdirectories (stop cycles, add move directory etc.)
+// TODO: Stop cycles in move/copy, and check recursive works well
 
+
+// Helper for debugging, lists the files in current directory
+// static void printDirectoryTable() {
+//     for(int i = 0; i < cur_directory.file_number; i++) {
+//         fprintf(stderr, "NAME: %s \t\t\t\t INODE INDEX: %d \n", cur_directory.file_inode_map[i].name, cur_directory.file_inode_map[i].inode_index);
+//     }
+// }
 
 // Private method to get index within directory table of given file name
 static int getDirectoryIndex(const char* fileName) {
@@ -32,14 +37,14 @@ static int getDirectoryIndex(const char* fileName) {
 int fdtOpenFullPathFile(const char* pathName) {
     int cur_dir_inode = fdt.table[cur_directory.fdt_index].inode_idx;
     //bool is_cur_subdir = false;
-    loadDirectory(super_block.root_directory);
+    loadDirectory(super_block.root_directory, true);
     char* hold_buffer = malloc(MAXFILENAME + 1); // allow null character end
     int i, j;
     for(i=0, j=0; i <= strlen(pathName); i++, j++) {
         // Should be impossible
         if (j > MAXFILENAME) {
             free(hold_buffer);
-            loadDirectory(cur_dir_inode);
+            loadDirectory(cur_dir_inode, true);
             return -1;
 
         // load in the new subdirectory we were reading in hold_buffer
@@ -48,14 +53,14 @@ int fdtOpenFullPathFile(const char* pathName) {
             int dir_index = getDirectoryIndex(hold_buffer);
             if (dir_index < 0) {
                 free(hold_buffer);
-                loadDirectory(cur_dir_inode);
+                loadDirectory(cur_dir_inode, true);
                 return -1;
             }
             int inode_index = cur_directory.file_inode_map[dir_index].inode_index;
             //if(inode_index == cur_dir_inode) is_cur_subdir = true;
-            if(!loadDirectory(inode_index)) {
+            if(!loadDirectory(inode_index, true)) {
                 free(hold_buffer);
-                loadDirectory(cur_dir_inode);
+                loadDirectory(cur_dir_inode, true);
                 return -1;
             }
             j = -1; // for loop will increment
@@ -70,7 +75,7 @@ int fdtOpenFullPathFile(const char* pathName) {
     free(hold_buffer);
 
     // Restore condition. In future could make this go on a boolean flag
-    loadDirectory(cur_dir_inode);
+    loadDirectory(cur_dir_inode, true);
 
     return fdt_idx;
 }
@@ -97,6 +102,7 @@ int openDirectoryFile(const char* fileName) {
 int createDirectoryFile(const char* name, bool is_directory) {
     // Create new iNode on disk and cache
     int fdt_index = createINode(is_directory);
+    if (fdt_index < 0) return fdt_index;
     fdt.inodes[fdt_index].link_count = 1;
     int curDirIdx = cur_directory.fdt_index;
 
@@ -124,7 +130,7 @@ int createDirectoryFile(const char* name, bool is_directory) {
         cur_directory.table_size += 5;
         DirectoryTableEntry* new_dir_mem = realloc(cur_directory.file_inode_map, cur_directory.table_size * sizeof(DirectoryTableEntry));
         if(new_dir_mem == NULL) {
-            fprintf(stderr, "ERROR: Unable to allocate directory cache memory!\n");
+            fprintf(stderr, "ERROR  (create file): Unable to allocate directory cache memory!\n");
             return -1;
         }
         cur_directory.file_inode_map = new_dir_mem;
@@ -149,23 +155,24 @@ static DirectoryTableEntry _removeDirectoryFile(int directory_index, bool delete
     int fdt_index = openFDTNode(remove.inode_index);
     iNode remove_inode = fdt.inodes[fdt_index];
 
-    // If deleting, for subdirectory remove all subfiles
+    // Delete the iNodes data if needed, recursive delete for subdirectories
     if(delete_data) {
         if(remove_inode.is_directory) {
-            loadDirectory(remove.inode_index);
+            loadDirectory(remove.inode_index, false); // Don't close going down
             while(cur_directory.file_number > 0) {
                 // Removing last saves time
-                _removeDirectoryFile(cur_directory.file_number - 1, true);
+                _removeDirectoryFile(cur_directory.file_number - 1, delete_data);
             }
-            loadDirectory(cur_directory.parent_inode_index);
+            loadDirectory(cur_directory.parent_inode_index, false); // Leave open for deleteINode
         }
 
         // Delete the file's iNode - closes the FDT entry too
         deleteINode(fdt_index);
     }
 
+    // Update current directory (data)
+
     cur_directory.file_number--;
-    
     // Update the directory cache
     // swap last directory entry into removed & update disk
     long old_write_pointer = fdt.table[cur_directory.fdt_index].writePointer;
@@ -204,7 +211,7 @@ DirectoryTableEntry removeDirectoryFile(const char* fileName) {
     int directory_index = getDirectoryIndex(fileName);
     if(directory_index < 0 ||  directory_index >= cur_directory.file_number) {
         return (DirectoryTableEntry) {.inode_index = -1, .name = ""};
-    } 
+    }
 
     // If no more references in file system, remove permanently
     int old_fdt_size = fdt.size;
@@ -222,31 +229,34 @@ DirectoryTableEntry removeDirectoryFile(const char* fileName) {
 
 
 // Replace the current directory table with that given by index - returns success status
-bool loadDirectory(int inode_index) {
+bool loadDirectory(int inode_index, bool close_current_directory) {
     if(cur_directory.fdt_index > -1 && inode_index == fdt.table[cur_directory.fdt_index].inode_idx) return true;
     // add new directory to FDT
+    int old_fdt_size = fdt.size;
     int fdt_index = openFDTNode(inode_index);
-    //iNodeTableEntry* new_dir = inode_table.table + inode_index;
     iNode new_dir = fdt.inodes[fdt_index];
     if(!new_dir.is_directory) {
         fprintf(stderr, "Attempting to load data file as a directory, load cancelled\n");
-        closeFDTNode(fdt_index);
+        if(fdt.size > old_fdt_size) closeFDTNode(fdt_index); // If the new wasn't already opened, close
         return false;
     }
 
     // Close the current directory in FDT
-    if(cur_directory.fdt_index >= 0) closeFDTNode(cur_directory.fdt_index);
+    if(cur_directory.fdt_index >= 0 && close_current_directory) closeFDTNode(cur_directory.fdt_index);
 
     int new_table_size = new_dir.size - sizeof(cur_directory.parent_inode_index);
     int new_num_files = new_table_size / sizeof(DirectoryTableEntry);
     
     // Change cur_directory cache values
-    DirectoryTableEntry* new_dir_mem = realloc(cur_directory.file_inode_map, new_table_size);
-    if(new_dir_mem == NULL) {
-        fprintf(stderr, "ERROR: Unable to allocate directory cache memory!\n");
-        return false;
+    if(new_table_size > 0) {
+        DirectoryTableEntry* new_dir_mem = realloc(cur_directory.file_inode_map, new_table_size);
+        if(new_dir_mem == NULL) {
+            fprintf(stderr, "ERROR (Load directory): Unable to allocate directory cache memory (size %d)!\n", new_table_size);
+            return false;
+        }
+        cur_directory.file_inode_map = new_dir_mem;
     }
-    cur_directory.file_inode_map = new_dir_mem;
+
     cur_directory.file_number = new_num_files;
     cur_directory.table_size = new_num_files;
     cur_directory.fdt_index = fdt_index;
@@ -295,7 +305,7 @@ bool copyDirectoryFile(const char* fileName, const char* moveToPath) {
     if(close_old) closeFDTNode(old_file);
 
     // Loading new directory & add entry
-    loadDirectory(fdt.table[new_file_dir].inode_idx);
+    loadDirectory(fdt.table[new_file_dir].inode_idx, true);
 
     char new_name[MAXFILENAME + 1];
     strcpy(new_name, fileName);
@@ -303,7 +313,7 @@ bool copyDirectoryFile(const char* fileName, const char* moveToPath) {
         if(strlen(new_name) + 2 > MAXFILENAME) {
             if (close_old) closeFDTNode(old_file);
             free(copy_from_buf);
-            loadDirectory(old_dir_inode);
+            loadDirectory(old_dir_inode, true);
             return false;
         }
         strcat(new_name, "_c");
@@ -345,12 +355,12 @@ bool moveDirectoryFile(const char* fileName, const char* moveToPath, bool copy) 
 
     // Load new directory & create entry
     DirectoryTableEntry new_entry = _removeDirectoryFile(old_dir_idx, false);
-    loadDirectory(fdt.table[new_file_dir].inode_idx);
+    loadDirectory(fdt.table[new_file_dir].inode_idx, true);
     strcpy(new_entry.name, fileName);
     while(getDirectoryIndex(new_entry.name) > 0) {
         if(strlen(new_entry.name) + 2 > MAXFILENAME) {
             if (close_old) closeFDTNode(old_file);
-            loadDirectory(old_dir_inode);
+            loadDirectory(old_dir_inode, true);
             return false;
         }
         strcat(new_entry.name, "_c");
@@ -361,9 +371,9 @@ bool moveDirectoryFile(const char* fileName, const char* moveToPath, bool copy) 
         cur_directory.table_size += 5;
         DirectoryTableEntry* new_dir_mem = realloc(cur_directory.file_inode_map, cur_directory.table_size * sizeof(DirectoryTableEntry));
         if(new_dir_mem == NULL) {
-            fprintf(stderr, "ERROR: Unable to allocate directory cache memory!\n");
+            fprintf(stderr, "ERROR  (move file): Unable to allocate directory cache memory!\n");
             if (close_old) closeFDTNode(old_file);
-            loadDirectory(old_dir_inode);
+            loadDirectory(old_dir_inode, true);
             return false;
         }
         cur_directory.file_inode_map = new_dir_mem;
@@ -373,7 +383,7 @@ bool moveDirectoryFile(const char* fileName, const char* moveToPath, bool copy) 
     cur_directory.file_number++;
 
     // Cleanup
-    loadDirectory(old_dir_inode);
+    loadDirectory(old_dir_inode, true);
     if(fdt.size > old_fdt_size) closeFDTNode(old_file);
     return true;
 }

@@ -3,6 +3,9 @@
 
 #define MAXFILENAME 20
 
+// NOTE: Functions like read, write, seek, open/close, and delete can not be used on directories.
+// Use specialized directory functions instead (mkdir, load, remove, etc.)
+
 /* Formats the disk emulator virtual disk, and creates the simple file system 
 *  instance on it.
 *  Parameters:
@@ -12,7 +15,7 @@ void mksfs(int fresh);
 
 
 /* Find next directory file. Used to loop through files in directory.
-*  Return non-zero if new file was saved in fname. 
+*  Return 1 if next file read, 0 on end of list. 
 *  Parameters:
 *      fname  (char*): buffer to save file name in
 *  Return:
@@ -29,6 +32,26 @@ int sfs_getnextfilename(char* fname);
 */
 int sfs_getfilesize(const char* path);
 
+
+/* Create a subdirectory in the currently loaded directory with the given name. Error if name is already taken. 
+*  Parameters:
+*      name (char*): Name of new subdirectory to create
+*  Return:
+*      success (int): 0 if succesful, negative if error
+*/
+int sfs_mkdir(char* name);
+
+
+/* Load subdirectory of given name into cache, future file calls will affect this directory. 
+*  Only takes one file at a time, and does not accept absolute paths, only relative.
+*  Parameters:
+*      name (char*): Name of new subdirectory to load
+*  Return:
+*      success (int): 0 if succesful, negative if error
+*/
+int sfs_loaddir(char* name);
+
+// TODO: Move & copy file/directory (use implemented fuctions and test)
 
 /* Open a file (load iNode to cache) and return index of file descriptor table entry.
 *  If a file does not exist, it will be created with size 0.

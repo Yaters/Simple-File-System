@@ -13,10 +13,11 @@ CFLAGS = -c -g -ansi -pedantic -Wall -std=gnu99 `pkg-config fuse --cflags --libs
 
 LDFLAGS = `pkg-config fuse --cflags --libs`
 
-# Uncomment on of the following three lines to compile
+# Uncomment on of the following four lines to compile
 # SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c sfs_test0.c
 # SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c sfs_test1.c
-SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c sfs_test2.c
+# SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c sfs_test2.c
+SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c sfs_test3.c
 # SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c fuse_wrap_old.c
 # SOURCES= disk_emu.c sfs_api.c sfs_inode.c sfs_directory.c sfs_free_bit_map.c sfs_super_block.c fuse_wrap_new.c
 

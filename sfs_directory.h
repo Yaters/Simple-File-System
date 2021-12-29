@@ -45,7 +45,7 @@ int createDirectoryFile(const char* name, bool is_directory);
 // Remove the file in directory and disk
 DirectoryTableEntry removeDirectoryFile(const char* fileName);
 
-// Replace the current directory table with that given by index
-bool loadDirectory(int inode_index);
+// Replace the current directory table with that given by index (parameter for whether to close current FDT)
+bool loadDirectory(int inode_index, bool close_current_directory);
 
 #endif

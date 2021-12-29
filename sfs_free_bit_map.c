@@ -114,13 +114,19 @@ int grab_inode_bit() {
 // free block index (in global disk position)
 void free_data_bit(int block_index) {
     int rel_idx = block_index - 1 - super_block.inode_table_length;
-    if (block_index >= (super_block.file_system_size-1) || rel_idx < 0) fprintf(stderr, "Freeing block %d out of system range\n", block_index);
+    if (block_index >= (super_block.file_system_size-1) || rel_idx < 0) {
+        fprintf(stderr, "Freeing block %d out of system range\n", block_index);
+        return;
+    }
     free_bit(rel_idx, false);
 }
 
 // free node index (in iNode table position | first iNode = 0)
 void free_inode_bit(int inode_index) {
-    if (inode_index >= super_block.inode_table_length*INODES_PER_BLOCK || inode_index < 0) fprintf(stderr, "Freeing inode %d out of system range\n", inode_index + 1);
+    if (inode_index >= super_block.inode_table_length*INODES_PER_BLOCK || inode_index < 0) {
+        fprintf(stderr, "Freeing inode %d out of system range\n", inode_index);
+        return;
+    }
     free_bit(inode_index, true);
 }
 

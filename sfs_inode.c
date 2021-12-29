@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 
 // Private helper method to add an entry to the table - returns the index
@@ -106,7 +107,7 @@ static int getNodeDataBlockList(iNode* node, int start_block, int last_block, in
     int* i_buff = NULL; bool first_i =  true;
     int* di_buff[2] = {NULL, NULL}; bool first_di[2] =  {true, true}; 
     int last_di_level_1 = -1; bool wrote_di_level[2] = {false, false}; // helpful for double indirect
-    int num_existing  = __INT_MAX__;
+    int num_existing  = INT_MAX;
 
     int i = 0; int cur = start_block;
     for(; cur <= last_block; i++, cur++) {
@@ -139,7 +140,7 @@ static int getNodeDataBlockList(iNode* node, int start_block, int last_block, in
                 if(first_di[0]) {
                     di_buff[0] = malloc(super_block.block_size);
                     // Either create the level 1 block or read it
-                    if(level_1 == 0) {
+                    if(level_1 == 0 && level_2 == 0) {
                         node->double_indirect_pointer = grab_data_bit();
                         if(node->double_indirect_pointer < 0) break;
                     } else read_blocks(node->double_indirect_pointer, 1, di_buff[0]);
@@ -154,7 +155,7 @@ static int getNodeDataBlockList(iNode* node, int start_block, int last_block, in
                     } else if(wrote_di_level[1]) {
                         write_blocks(di_buff[0][last_di_level_1], 1, di_buff[1]);
                     }
-                    // Either create level 2 block or read it
+                    // Either create level 2 (indirect) block or read it
                     if(level_2 == 0) {
                         di_buff[0][level_1] = grab_data_bit(); 
                         if(di_buff[0][level_1] < 0) break;
@@ -212,9 +213,10 @@ static int getNodeDataBlockList(iNode* node, int start_block, int last_block, in
 
     // Broke out early
     if (cur <= last_block) {
+        // TODO: Free grabbed data bits assigned in loop, like double indirect & data block at start
+        num_existing *= -1;
         // Must communicate the problem. If ==0, blocks allocated indicate cancel write anyways
-        if(num_existing == 0) num_existing = -1;
-        else num_existing *= -1;
+        if(num_existing >= 0) num_existing = -1;
         disk_data_idxs[i] = -1;
     }
 
@@ -239,7 +241,6 @@ int createINode(bool is_directory) {
     fdt.inodes[fdt_index].file_id = ++MAX_FILE_ID;
     // Still unused = link_count, uid, gid
     saveFDTNode(fdt_index); // Save iNode block to disk
-
     return fdt_index;
 }
 
@@ -518,6 +519,10 @@ long deleteData(int fdt_index, long data_size) {
     free(block_buffer);
     free(saved_data);
     free(disk_data_idxs);
+
+    // Save new iNode info & disk block changes
+    saveFDTNode(fdt_index);
+    if(node->blocks_allocated < old_blocks_alloc) saveFreeBitMapToDisk();
 
     // Return amount deleted
     return data_size;

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h> 
 #include <string.h>
-#include <unistd.h>
+// #include <unistd.h>
 #include <time.h>
 #include "disk_emu.h"
 
@@ -161,7 +161,7 @@ int write_blocks(int start_address, int nblocks, void *write_buffer)
     for (i = 0; i < nblocks; ++i)
     {
         /*Pause until the latency duration is elapsed*/
-        usleep(L);
+        //usleep(L);
 
         memcpy(blockWrite, buffer+(i*BLOCK_SIZE), BLOCK_SIZE);
 

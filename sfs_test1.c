@@ -394,7 +394,7 @@ main(int argc, char **argv)
       x = sfs_fread(fds[0], fixedbuf, sizeof(fixedbuf));
       for(int j = 0; j < x; j++) {
         if(fixedbuf[j] != (char) i) {
-          fprintf(stderr, "ERROR: Data read (%d) at offset %lu failed to match expected %d\n", fixedbuf[j], i * sizeof(fixedbuf) + j, (char) i);
+          fprintf(stderr, "ERROR: Data read (%d) at offset %d failed to match expected %d\n", fixedbuf[j], i * sizeof(fixedbuf) + j, (char) i);
           error_count++;
           break;
         }

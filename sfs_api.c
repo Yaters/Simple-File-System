@@ -27,6 +27,8 @@ int POINTERS_PER_BLOCK;
 int INODES_PER_BLOCK;
 int MAX_FILE_BLOCKS;
 int MAX_FILE_ID = 0;
+static int directory_iterator_index = 0;
+
 
 
 // Helper method to clear values. Will do nothing if uninitialized
@@ -90,13 +92,12 @@ void mksfs(int fresh) {
         loadFreeBitMap();
         MAX_FILE_ID = find_number_files();
     }    
-    loadDirectory(super_block.root_directory);
+    loadDirectory(super_block.root_directory, true);
 }
 
 
 // Used by FUSE for iterator through directory - read into fname, return 1 on success, 0 on end of list
 int sfs_getnextfilename(char* fname) {
-    static int directory_iterator_index = 0;
     if(directory_iterator_index >= cur_directory.file_number) {
         directory_iterator_index = 0;
         return 0;
@@ -121,14 +122,65 @@ int sfs_getfilesize(const char* path) {
 }
 
 
+// Create a subdirectory with the given name. Return 0 on success, negative on failure
+int sfs_mkdir(char* name) {
+    if(strlen(name) > MAXFILENAME) {
+        return -1;
+    }
+    int old_size = fdt.size;
+    int idx = openDirectoryFile(name);
+    // If found, error. Otherwise create new
+    if(idx >= 0) {
+        if(fdt.size > old_size) closeFDTNode(idx);
+        return -1;
+    } else {
+        idx = createDirectoryFile(name, true);
+    }
+    if(idx < 0) return -1;
+    closeFDTNode(idx); // Cleanup, don't keep created directory in FDT
+    return 0;
+}
+
+
+// Changes current directory to subdirectory with the given name. Return 0 on success, negative on failure
+int sfs_loaddir(char* name) {
+    if(strlen(name) > MAXFILENAME) {
+        return 0;
+    }
+
+    int inode_idx = cur_directory.parent_inode_index; // Default parent
+
+    // If not loading parent directory - load new into fdt and extract iNode index
+    if(strcmp(name, "..") != 0) {
+        int fdt_idx = openDirectoryFile(name);
+        if(fdt_idx < 0) return fdt_idx;
+        inode_idx = fdt.table[fdt_idx].inode_idx;
+    }
+
+    if(inode_idx < 0 || !loadDirectory(inode_idx, true)) return -1;
+    directory_iterator_index = 0; // Restart any iterator
+    return 0;
+}
+
+// TODO: Load absolute path method (loaddir is relative, and only takes one at a time)
+// TODO: Make loaddir take "...\...", and make sure file names don't have "\"
+// TODO: Organize file names to have 3 letter extension max
+
+
 // Open a file with name (create if doesn't exist). Return index in file descriptor table, or negative on error
 int sfs_fopen(char* name) {
     if(strlen(name) > MAXFILENAME) {
         return -1;
     }
     int idx = openDirectoryFile(name);
+
+    // If doesn't already exist
     if (idx < 0) {
         idx = createDirectoryFile(name, false);
+    
+    // Use specific directory functions (mkdir, loaddir, etc.) for directories.
+    } else if (fdt.inodes[idx].is_directory){ 
+        return -1;
     }
     return idx;
 }
@@ -136,7 +188,7 @@ int sfs_fopen(char* name) {
 
 // Remove file from file descriptor table. Return 0 on success, negative on error
 int sfs_fclose(int fileID) {
-    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0) {
+    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0  || fdt.inodes[fileID].is_directory) {
         return -1;
     }
     closeFDTNode(fileID);
@@ -146,7 +198,7 @@ int sfs_fclose(int fileID) {
 
 // Use write pointer to write to file. Return bytes written
 int sfs_fwrite(int fileID, const char* buf, int length) {
-    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0) {
+    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0 || fdt.inodes[fileID].is_directory) {
         return -1;
     }
     if (length < 1) return 0;
@@ -157,7 +209,7 @@ int sfs_fwrite(int fileID, const char* buf, int length) {
 
 // Use write pointer to delete from a file. Returns bytes deleted
 int sfs_fdelete(int fileID, int length) {
-    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0) {
+    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0 || fdt.inodes[fileID].is_directory) {
         return -1;
     }
     if (length < 1) return 0;
@@ -168,7 +220,7 @@ int sfs_fdelete(int fileID, int length) {
 
 // Use read pointer to read from file. Return bytes read
 int sfs_fread(int fileID, char* buf, int length) {
-    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0) {
+    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0 || fdt.inodes[fileID].is_directory) {
         return -1;
     }
     if (length < 1) return 0;
@@ -180,20 +232,18 @@ int sfs_fread(int fileID, char* buf, int length) {
 
 // Move read/write pointer to given loc. Return 0 on success, negative on error
 int sfs_fseek(int fileID, int loc) {
-    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0) {
+    if(fileID < 0 || fileID >= fdt.allocated || fdt.table[fileID].inode_idx < 0 || fdt.inodes[fileID].is_directory) {
         return -1;
     }
     if (loc < 0 || loc >= fdt.inodes[fileID].size) {
         return -1;
     }
-    // If users really want to they can mess with a directory they can. More dangerous but more flexible
-    // if(fdt.inodes[fileID].is_directory) return -1;
     fdt.table[fileID].readPointer = loc;
     fdt.table[fileID].writePointer = loc;
     return 0;
 }
 
-// Delete a file. Return 0 on success, negative on error
+// Delete a file or directory. Return 0 on success, negative on error
 int sfs_remove(char* file) {
     DirectoryTableEntry old_file = removeDirectoryFile(file);
     if(old_file.inode_index < 0) return -1;
